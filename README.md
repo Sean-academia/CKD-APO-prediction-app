@@ -16,7 +16,7 @@ No raw patient data, imputed datasets, training sets, validation sets, or test s
 ## Run The App
 
 ```bash
-cd "/Users/sean/Documents/Codex/妇产科机器学习预测模型/deploy_app"
+cd CKD-APO-prediction-app
 streamlit run app.py
 ```
 
@@ -47,7 +47,7 @@ If the server is placed behind a hospital intranet or reverse proxy, expose only
 ## Docker Deployment
 
 ```bash
-cd "/Users/sean/Documents/Codex/妇产科机器学习预测模型/deploy_app"
+cd CKD-APO-prediction-app
 docker build -t ckd-apo-prediction-app .
 docker run -p 8501:8501 ckd-apo-prediction-app
 ```
