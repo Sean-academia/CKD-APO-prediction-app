@@ -5,18 +5,22 @@ This folder contains the clean deployment package for the Streamlit prediction t
 ## Included Files
 
 - `app.py`: Streamlit web app.
-- `saved_models/ET.pkl`: final ExtraTreesClassifier model.
+- `saved_models/RF.pkl`: final RandomForestClassifier model.
 - `saved_models/scaler.pkl`: fitted scaler used before prediction.
-- `saved_models/feature_names.pkl`: final 18 model input features.
+- `saved_models/feature_names.pkl`: final 11 model input features.
 - `assets/ckd_pregnancy_hero.png`: homepage image.
 - `llm_interpretation_cache/`: optional cache for local LLM-generated interpretations.
 
 No raw patient data, imputed datasets, training sets, validation sets, or test sets are included in this deployment package.
 
+The final model uses the following predictors in this fixed order:
+
+`ppHTN`, `ppCHD`, `t1Hb`, `t1TSH`, `t1TG`, `t224hUP`, `t2UA`, `t2WBC`, `t2FT4`, `t2FPG`, and `t2MAP`.
+
 ## Run The App
 
 ```bash
-cd CKD-APO-prediction-app
+cd deploy_app
 streamlit run app.py
 ```
 
@@ -47,7 +51,7 @@ If the server is placed behind a hospital intranet or reverse proxy, expose only
 ## Docker Deployment
 
 ```bash
-cd CKD-APO-prediction-app
+cd deploy_app
 docker build -t ckd-apo-prediction-app .
 docker run -p 8501:8501 ckd-apo-prediction-app
 ```

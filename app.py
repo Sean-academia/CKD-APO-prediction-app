@@ -1,10 +1,7 @@
 # streamlit run app.py
 """
-Clinical Decision Support System - Pure English Version
-Supports automatic best model selection or manual model specification
-Supports all model types (linear models + tree models)
-
-Modified version with technical compatibility patches
+Web tool for RF-based APO risk prediction in pregnant women with pre-existing CKD.
+Provides bilingual inputs, patient-specific SHAP explanations, and optional local LLM interpretation.
 """
 
 import streamlit as st
@@ -33,7 +30,6 @@ from datetime import datetime
 # NumPy 2.0 renamed trapz to trapezoid, adding alias for backward compatibility
 if not hasattr(np, 'trapz'):
     np.trapz = np.trapezoid
-    print("✅ NumPy 2.0 Compatibility Patch applied (trapz)")
 
 # ==========================================
 # Streamlit display settings
@@ -61,7 +57,6 @@ plt.rcParams['figure.dpi'] = 360
 plt.rcParams['savefig.dpi'] = 650
 plt.rcParams['savefig.bbox'] = 'tight'
 plt.rcParams['svg.fonttype'] = 'none'
-print("✅ Matplotlib settings configured for Streamlit display")
 
 
 # --- 0. Helper function for displaying interactive SHAP plots ---
@@ -80,7 +75,7 @@ def st_matplotlib_high_res(fig):
     buffer = io.BytesIO()
     fig.savefig(buffer, format="png", dpi=650, bbox_inches=None, facecolor="white")
     buffer.seek(0)
-    st.image(buffer, use_container_width=True)
+    st.image(buffer, width="stretch")
 
 
 # --- Smart SHAP Explainer Selection ---
@@ -185,8 +180,22 @@ def compute_shap_values(explainer, explainer_type, X_data):
 
 # --- 1. Smart resource loading: fixed final best model ---
 
-FINAL_BEST_MODEL = "ET"
-LLM_PROMPT_VERSION = "ckd_apo_interpretation_v2_2026_09_09"
+FINAL_BEST_MODEL = "RF"
+FINAL_FEATURE_NAMES = [
+    "ppHTN",
+    "ppCHD",
+    "t1Hb",
+    "t1TSH",
+    "t1TG",
+    "t224hUP",
+    "t2UA",
+    "t2WBC",
+    "t2FT4",
+    "t2FPG",
+    "t2MAP",
+]
+RISK_THRESHOLD = 0.5
+LLM_PROMPT_VERSION = "ckd_apo_rf11_interpretation_v3_2026_11_15"
 LLM_TEMPERATURE = 0
 LLM_TOP_P = 1
 LLM_MAX_TOKENS = 600
@@ -194,31 +203,24 @@ LLM_SEED = 6666
 LLM_CACHE_DIR = Path(__file__).parent / "llm_interpretation_cache"
 
 FEATURE_INPUT_CONFIG = {
-    "Height": {"type": "continuous", "step": 0.1, "format": "%.1f"},
-    "ppDM": {"type": "binary"},
+    "ppHTN": {"type": "binary"},
     "ppCHD": {"type": "binary"},
-    "Gravidity": {"type": "integer"},
-    "ppCsA": {"type": "binary"},
-    "apAntiHTN": {"type": "binary"},
-    "apCorticosteroid": {"type": "binary"},
-    "apHeparin": {"type": "binary"},
-    "ppSCr": {"type": "continuous", "step": 0.1, "format": "%.1f"},
     "t1Hb": {"type": "continuous", "step": 0.1, "format": "%.1f"},
-    "t1GGT": {"type": "continuous", "step": 0.1, "format": "%.1f"},
-    "t1FT4": {"type": "continuous", "step": 0.1, "format": "%.1f"},
-    "t1dsDNA": {"type": "continuous", "step": 0.1, "format": "%.1f"},
+    "t1TSH": {"type": "continuous", "step": 0.01, "format": "%.2f"},
+    "t1TG": {"type": "continuous", "step": 0.01, "format": "%.2f"},
     "t224hUP": {"type": "continuous", "step": 0.1, "format": "%.1f"},
-    "t2BUN": {"type": "continuous", "step": 0.1, "format": "%.1f"},
     "t2UA": {"type": "continuous", "step": 0.1, "format": "%.1f"},
-    "t2FPG": {"type": "continuous", "step": 0.1, "format": "%.1f"},
-    "t2MAP": {"type": "continuous", "step": 1.0, "format": "%.0f"},
+    "t2WBC": {"type": "continuous", "step": 0.01, "format": "%.2f"},
+    "t2FT4": {"type": "continuous", "step": 0.01, "format": "%.2f"},
+    "t2FPG": {"type": "continuous", "step": 0.01, "format": "%.2f"},
+    "t2MAP": {"type": "continuous", "step": 0.01, "format": "%.2f"},
 }
 
 TEXT = {
     "English": {
-        "home_title": "LLM-Assisted Interpretation of Machine Learning Prediction for Adverse Pregnancy Outcomes in Pregnant Women with Chronic Kidney Disease",
+        "home_title": "LLM-Assisted Interpretation of Machine Learning Prediction for Adverse Pregnancy Outcomes in Pregnant Women with Pre-existing Chronic Kidney Disease",
         "home_p1": (
-            "Pregnancy in women with chronic kidney disease is clinically complex, "
+            "Pregnancy in women with pre-existing chronic kidney disease is clinically complex, "
             "and adverse pregnancy outcomes remain a major concern. Early identification "
             "of high-risk patients may support closer monitoring and individualized clinical assessment."
         ),
@@ -228,7 +230,7 @@ TEXT = {
             "model-assisted explanation for individual risk interpretation."
         ),
         "enter": "Enter",
-        "page_title": "LLM-Assisted Interpretation of Machine Learning Prediction for Adverse Pregnancy Outcomes in Pregnant Women with Chronic Kidney Disease",
+        "page_title": "LLM-Assisted Interpretation of Machine Learning Prediction for Adverse Pregnancy Outcomes in Pregnant Women with Pre-existing Chronic Kidney Disease",
         "single_tab": "Single Prediction",
         "batch_tab": "Batch Prediction",
         "input_note": "Hover over each variable name to view its clinical meaning. All input variables are measured before or during the second trimester.",
@@ -239,7 +241,7 @@ TEXT = {
         "low_risk": "Low Risk",
         "high_risk": "High Risk",
         "model": "Model",
-        "top_features": "Global Feature Importance",
+        "top_features": "Global SHAP Feature Importance",
         "waterfall": "Individual Waterfall Plot",
         "llm_explanation": "LLM-Assisted Individual Interpretation",
         "llm_disabled": "Local LLM explanation is disabled.",
@@ -256,9 +258,9 @@ TEXT = {
         "general": "General Obstetric Variables",
     },
     "中文": {
-        "home_title": "大语言模型辅助解释妊娠合并慢性肾脏病患者不良妊娠结局机器学习预测模型",
+        "home_title": "大语言模型辅助解释孕前伴有慢性肾脏病孕妇不良妊娠结局机器学习预测模型",
         "home_p1": (
-            "妊娠合并慢性肾脏病患者病情复杂，不良妊娠结局风险较高。"
+            "孕前伴有慢性肾脏病的孕妇病情复杂，不良妊娠结局风险较高。"
             "在孕中期之前识别高风险患者，有助于开展更密切的监测和个体化临床评估。"
         ),
         "home_p2": (
@@ -266,7 +268,7 @@ TEXT = {
             "并提供可选的本地大语言模型辅助解释模块，用于生成个体化风险解释。"
         ),
         "enter": "进入",
-        "page_title": "大语言模型辅助解释妊娠合并慢性肾脏病患者不良妊娠结局机器学习预测模型",
+        "page_title": "大语言模型辅助解释孕前伴有慢性肾脏病孕妇不良妊娠结局机器学习预测模型",
         "single_tab": "单人预测",
         "batch_tab": "批量预测",
         "input_note": "将鼠标悬停在变量名称上可查看临床含义。所有输入变量均来自孕中期之前或孕中期时点。",
@@ -277,7 +279,7 @@ TEXT = {
         "low_risk": "低风险",
         "high_risk": "高风险",
         "model": "模型",
-        "top_features": "全局特征重要性",
+        "top_features": "全局 SHAP 特征重要性",
         "waterfall": "个体瀑布图",
         "llm_explanation": "大语言模型辅助个体化解释",
         "llm_disabled": "本地大语言模型解释已关闭。",
@@ -293,6 +295,15 @@ TEXT = {
 }
 
 FEATURE_META = {
+    "ppHTN": {
+        "en": "Pre-pregnancy hypertension: 0 = No, 1 = Yes.",
+        "zh": "孕前高血压：0=否，1=是。",
+        "english_name": "Pre-pregnancy hypertension",
+        "chinese_name": "孕前高血压",
+        "unit": "0 = No, 1 = Yes",
+        "clinical_meaning_en": "Indicates whether hypertension was present before pregnancy and reflects baseline blood-pressure-related disease burden.",
+        "clinical_meaning_zh": "表示孕前是否合并高血压，反映基础血压相关疾病负担。",
+    },
     "Height": {
         "en": "Height before pregnancy or at baseline, cm.",
         "zh": "身高，单位 cm。",
@@ -312,13 +323,13 @@ FEATURE_META = {
         "clinical_meaning_zh": "表示孕前是否合并糖尿病，反映基础代谢疾病负担。",
     },
     "ppCHD": {
-        "en": "Pre-pregnancy coronary heart disease: 0 = No, 1 = Yes.",
-        "zh": "孕前冠心病：0=否，1=是。",
-        "english_name": "Pre-pregnancy coronary heart disease",
-        "chinese_name": "孕前冠心病",
+        "en": "Pre-pregnancy heart disease: 0 = No, 1 = Yes.",
+        "zh": "孕前心脏病：0=否，1=是。",
+        "english_name": "Pre-pregnancy heart disease",
+        "chinese_name": "孕前心脏病",
         "unit": "0 = No, 1 = Yes",
-        "clinical_meaning_en": "Indicates cardiovascular comorbidity before pregnancy.",
-        "clinical_meaning_zh": "表示孕前是否合并冠心病，反映基础心血管疾病负担。",
+        "clinical_meaning_en": "Indicates whether heart disease was present before pregnancy and reflects baseline cardiovascular disease burden.",
+        "clinical_meaning_zh": "表示孕前是否合并心脏病，反映基础心血管疾病负担。",
     },
     "Gravidity": {
         "en": "Number of previous and current pregnancies, count.",
@@ -383,6 +394,24 @@ FEATURE_META = {
         "clinical_meaning_en": "Reflects anemia status and oxygen-carrying capacity in early pregnancy.",
         "clinical_meaning_zh": "反映孕早期贫血状态和携氧能力。",
     },
+    "t1TSH": {
+        "en": "First-trimester thyroid-stimulating hormone, mIU/L.",
+        "zh": "孕早期促甲状腺激素，单位 mIU/L。",
+        "english_name": "First-trimester thyroid-stimulating hormone",
+        "chinese_name": "孕早期促甲状腺激素",
+        "unit": "mIU/L",
+        "clinical_meaning_en": "Reflects thyroid regulatory status during the first trimester.",
+        "clinical_meaning_zh": "反映孕早期甲状腺调节状态。",
+    },
+    "t1TG": {
+        "en": "First-trimester triglycerides, mmol/L.",
+        "zh": "孕早期甘油三酯，单位 mmol/L。",
+        "english_name": "First-trimester triglycerides",
+        "chinese_name": "孕早期甘油三酯",
+        "unit": "mmol/L",
+        "clinical_meaning_en": "Reflects lipid metabolism during the first trimester.",
+        "clinical_meaning_zh": "反映孕早期脂质代谢状态。",
+    },
     "t1GGT": {
         "en": "First-trimester gamma-glutamyl transferase, U/L.",
         "zh": "孕早期γ-谷氨酰转肽酶，单位 U/L。",
@@ -437,6 +466,24 @@ FEATURE_META = {
         "clinical_meaning_en": "Reflects purine metabolism, renal excretion, and pregnancy-related metabolic burden during the second trimester.",
         "clinical_meaning_zh": "反映孕中期嘌呤代谢、肾脏排泄及妊娠相关代谢负担。",
     },
+    "t2WBC": {
+        "en": "Second-trimester white blood cell count, ×10^9/L.",
+        "zh": "孕中期白细胞计数，单位 ×10^9/L。",
+        "english_name": "Second-trimester white blood cell count",
+        "chinese_name": "孕中期白细胞计数",
+        "unit": "×10^9/L",
+        "clinical_meaning_en": "Reflects the circulating white blood cell level during the second trimester.",
+        "clinical_meaning_zh": "反映孕中期外周血白细胞水平。",
+    },
+    "t2FT4": {
+        "en": "Second-trimester free thyroxine, pmol/L.",
+        "zh": "孕中期游离甲状腺素，单位 pmol/L。",
+        "english_name": "Second-trimester free thyroxine",
+        "chinese_name": "孕中期游离甲状腺素",
+        "unit": "pmol/L",
+        "clinical_meaning_en": "Reflects thyroid hormone status during the second trimester.",
+        "clinical_meaning_zh": "反映孕中期甲状腺激素水平。",
+    },
     "t2FPG": {
         "en": "Second-trimester fasting plasma glucose, mmol/L.",
         "zh": "孕中期空腹血糖，单位 mmol/L。",
@@ -458,33 +505,38 @@ FEATURE_META = {
 }
 
 FEATURE_GROUPS = {
-    "prepregnancy": ["Height", "ppDM", "ppCHD", "ppSCr"],
-    "general": ["Gravidity"],
-    "medication": ["ppCsA", "apAntiHTN", "apCorticosteroid", "apHeparin"],
-    "first_trimester": ["t1Hb", "t1GGT", "t1FT4", "t1dsDNA"],
-    "second_trimester": ["t224hUP", "t2BUN", "t2UA", "t2FPG", "t2MAP"],
+    "prepregnancy": ["ppHTN", "ppCHD"],
+    "first_trimester": ["t1Hb", "t1TSH", "t1TG"],
+    "second_trimester": ["t224hUP", "t2UA", "t2WBC", "t2FT4", "t2FPG", "t2MAP"],
 }
 
 HIGH_RISK_EXAMPLE_VALUES = {
-    # Test set row 12: true APO = 1; ET predicted probability = 0.9054.
-    "Height": 160.0,
-    "ppDM": 0,
+    # Test set row 90: true APO = 1; RF predicted probability = 0.8407.
+    "ppHTN": 1,
     "ppCHD": 0,
-    "Gravidity": 1,
-    "ppCsA": 0,
-    "apAntiHTN": 1,
-    "apCorticosteroid": 1,
-    "apHeparin": 0,
-    "ppSCr": 89.0,
-    "t1Hb": 114.4,
-    "t1GGT": 34.1,
-    "t1FT4": 16.5,
-    "t1dsDNA": 27.2,
-    "t224hUP": 5397.5,
-    "t2BUN": 8.5,
-    "t2UA": 538.0,
-    "t2FPG": 3.9,
-    "t2MAP": 103.0,
+    "t1Hb": 88.0,
+    "t1TSH": 0.05,
+    "t1TG": 1.07,
+    "t224hUP": 4719.11,
+    "t2UA": 406.08,
+    "t2WBC": 11.27,
+    "t2FT4": 14.67,
+    "t2FPG": 5.23,
+    "t2MAP": 100.67,
+}
+
+GLOBAL_SHAP_IMPORTANCE = {
+    "t2MAP": 0.0897097713,
+    "t2UA": 0.0788977316,
+    "t1TG": 0.0505515260,
+    "t224hUP": 0.0496946219,
+    "t2FT4": 0.0310641270,
+    "t2FPG": 0.0281550954,
+    "t1Hb": 0.0267959189,
+    "t1TSH": 0.0198549180,
+    "t2WBC": 0.0113820097,
+    "ppHTN": 0.0022209060,
+    "ppCHD": 0.0005418498,
 }
 
 
@@ -724,29 +776,9 @@ def plot_waterfall_explanation(contribution_df, base_value):
 
 def plot_global_importance():
     """
-    Recreate the fixed global feature-importance figure with the same visual style as the app plots.
-    Values are taken from the final model feature-importance figure used in the report.
+    Display mean absolute SHAP values from the final RF model on the 2024 test cohort.
     """
-    importance_values = {
-        "t224hUP": 0.0911,
-        "t2UA": 0.0845,
-        "t2BUN": 0.0828,
-        "t1FT4": 0.0813,
-        "t2MAP": 0.0736,
-        "ppSCr": 0.0734,
-        "t1dsDNA": 0.0729,
-        "t1Hb": 0.0686,
-        "t1GGT": 0.0606,
-        "apAntiHTN": 0.0552,
-        "Gravidity": 0.0525,
-        "Height": 0.0519,
-        "t2FPG": 0.0514,
-        "apHeparin": 0.0416,
-        "apCorticosteroid": 0.0325,
-        "ppCsA": 0.0141,
-        "ppDM": 0.0091,
-        "ppCHD": 0.0031,
-    }
+    importance_values = GLOBAL_SHAP_IMPORTANCE
     plot_df = (
         pd.DataFrame({
             "Feature": list(importance_values.keys()),
@@ -762,7 +794,7 @@ def plot_global_importance():
     for y_pos, value in enumerate(plot_df["Importance"]):
         ax.text(value + 0.002, y_pos, f"{value:.4f}", va="center", ha="left", fontsize=7, fontweight="700")
 
-    ax.set_xlabel("Feature Importance", fontsize=7)
+    ax.set_xlabel("Mean |SHAP value|", fontsize=7)
     ax.set_ylabel("Features", fontsize=7)
     ax.tick_params(axis="y", labelsize=6.5)
     ax.tick_params(axis="x", labelsize=6.5)
@@ -777,26 +809,7 @@ def plot_combined_explanation(contribution_df, base_value):
     """
     Draw global feature importance and individual waterfall on one canvas so axes align.
     """
-    importance_values = {
-        "t224hUP": 0.0911,
-        "t2UA": 0.0845,
-        "t2BUN": 0.0828,
-        "t1FT4": 0.0813,
-        "t2MAP": 0.0736,
-        "ppSCr": 0.0734,
-        "t1dsDNA": 0.0729,
-        "t1Hb": 0.0686,
-        "t1GGT": 0.0606,
-        "apAntiHTN": 0.0552,
-        "Gravidity": 0.0525,
-        "Height": 0.0519,
-        "t2FPG": 0.0514,
-        "apHeparin": 0.0416,
-        "apCorticosteroid": 0.0325,
-        "ppCsA": 0.0141,
-        "ppDM": 0.0091,
-        "ppCHD": 0.0031,
-    }
+    importance_values = GLOBAL_SHAP_IMPORTANCE
     top_df = (
         pd.DataFrame({
             "Feature": list(importance_values.keys()),
@@ -829,7 +842,7 @@ def plot_combined_explanation(contribution_df, base_value):
     ax_left.barh(labels_left, top_df["Importance"], color="#2d86d8", alpha=0.92, height=0.70)
     for y_pos, value in enumerate(top_df["Importance"]):
         ax_left.text(value + 0.002, y_pos, f"{value:.4f}", va="center", ha="left", fontsize=9, fontweight="700")
-    ax_left.set_xlabel("Feature Importance", fontsize=10, labelpad=8)
+    ax_left.set_xlabel("Mean |SHAP value|", fontsize=10, labelpad=8)
     ax_left.set_ylabel("Features", fontsize=10, labelpad=8)
     ax_left.set_xlim(0, max(importance_values.values()) * 1.22)
     ax_left.tick_params(axis="y", labelsize=9)
@@ -967,9 +980,9 @@ def _build_variable_dictionary(feature_names, language):
 
 def _build_llm_prompt_payload(probability, contribution_df, model_name, language):
     feature_names = contribution_df["Feature"].tolist()
-    risk_level = "High Risk" if probability > 0.5 else "Low Risk"
+    risk_level = "High Risk" if probability > RISK_THRESHOLD else "Low Risk"
     if language == "中文":
-        risk_level = "高风险" if probability > 0.5 else "低风险"
+        risk_level = "高风险" if probability > RISK_THRESHOLD else "低风险"
 
     increase_rows = _build_llm_rows(contribution_df, "increase")
     decrease_rows = _build_llm_rows(contribution_df, "decrease")
@@ -1072,7 +1085,6 @@ def generate_local_llm_explanation(probability, contribution_df, base_url, model
             "正SHAP值表示该变量将模型预测结果推向更高的APO预测概率；"
             "负SHAP值表示该变量将模型预测结果推向更低的APO预测概率。"
             "SHAP解释只代表模型层面的预测贡献，不代表真实因果效应。"
-            "不要将用药变量解释为药物导致或预防不良妊娠结局。"
         )
         prompt = f"""
 机器学习模型预测结果：
@@ -1117,7 +1129,6 @@ SHAP解释规则：
             "Positive SHAP values push the model output toward a higher predicted APO probability; "
             "negative SHAP values push the model output toward a lower predicted APO probability. "
             "SHAP explanations are model-level prediction contributions, not causal effects. "
-            "Do not interpret medication variables as medications causing or preventing adverse pregnancy outcomes."
         )
         prompt = f"""
 Machine-learning model output:
@@ -1206,34 +1217,48 @@ def load_artifacts(model_name=None):
         feature_names: Feature name list
         model_name: Actually used model name
     """
-    model_dir = "saved_models"
+    model_dir = Path(__file__).parent / "saved_models"
     
     if not os.path.exists(model_dir):
         raise FileNotFoundError(f"Model directory does not exist: {model_dir}")
     
     # 1. Load Scaler
-    scaler_path = os.path.join(model_dir, 'scaler.pkl')
+    scaler_path = model_dir / "scaler.pkl"
     if not os.path.exists(scaler_path):
         raise FileNotFoundError(f"Scaler not found: {scaler_path}")
     scaler = joblib.load(scaler_path)
     
     # 2. Load feature names
-    feature_path = os.path.join(model_dir, 'feature_names.pkl')
+    feature_path = model_dir / "feature_names.pkl"
     if not os.path.exists(feature_path):
         raise FileNotFoundError(f"Feature names not found: {feature_path}")
     feature_names = joblib.load(feature_path)
+    feature_names = list(feature_names)
+    if feature_names != FINAL_FEATURE_NAMES:
+        raise ValueError(
+            "The deployed feature list does not match the final RF model. "
+            f"Expected {FINAL_FEATURE_NAMES}, received {feature_names}."
+        )
     
     # 3. Load model
     best_model_name = FINAL_BEST_MODEL if model_name is None else model_name
     
     # Convert model name to filename (replace spaces with underscores)
     model_filename = best_model_name.replace(' ', '_') + '.pkl'
-    model_path = os.path.join(model_dir, model_filename)
+    model_path = model_dir / model_filename
     
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"Model file not found: {model_path}")
     
     model = joblib.load(model_path)
+    if type(model).__name__ != "RandomForestClassifier":
+        raise TypeError(
+            f"Expected RandomForestClassifier for the final model, received {type(model).__name__}."
+        )
+    if getattr(model, "n_features_in_", len(feature_names)) != len(feature_names):
+        raise ValueError("The RF model and deployed feature list have different dimensions.")
+    if getattr(scaler, "n_features_in_", len(feature_names)) != len(feature_names):
+        raise ValueError("The scaler and deployed feature list have different dimensions.")
     
     return model, scaler, feature_names, best_model_name
 
@@ -1241,7 +1266,7 @@ def load_artifacts(model_name=None):
 # --- 2. Page configuration ---
 
 st.set_page_config(
-    page_title="Clinical Decision Support System",
+    page_title="CKD Pregnancy APO Prediction",
     page_icon="🏥",
     layout="wide"
 )
@@ -1547,7 +1572,7 @@ if not st.session_state.entered_prediction_tool:
     st.markdown('<div class="enter-wrap">', unsafe_allow_html=True)
     _, enter_col, _ = st.columns([1.85, 0.7, 1.85])
     with enter_col:
-        if st.button(TEXT[language]["enter"], use_container_width=True):
+        if st.button(TEXT[language]["enter"], width="stretch"):
             st.session_state.entered_prediction_tool = True
             st.query_params["page"] = "tool"
             st.rerun()
@@ -1603,7 +1628,7 @@ with tab1:
                 st.markdown(f"**{TEXT[language]['prediction_result']}**")
                 result_col1, result_col2, result_col3 = st.columns([1, 1, 2])
                 with result_col1:
-                    risk_class = "high" if prob > 0.5 else "low"
+                    risk_class = "high" if prob > RISK_THRESHOLD else "low"
                     st.markdown(
                         (
                             '<div class="risk-probability-card">'
@@ -1615,7 +1640,7 @@ with tab1:
                     )
                 with result_col2:
                     st.markdown(f"**{TEXT[language]['risk_level']}**")
-                    if prob > 0.5:
+                    if prob > RISK_THRESHOLD:
                         st.error(f"🔴 {TEXT[language]['high_risk']}")
                     else:
                         st.success(f"🟢 {TEXT[language]['low_risk']}")
@@ -1731,7 +1756,10 @@ with tab2:
 
                 df_result = df_upload.copy()
                 df_result['Predicted_Probability'] = np.round(probs, 4)
-                df_result['Risk_Level'] = ['High Risk' if p > 0.5 else 'Low Risk' for p in probs]
+                df_result['Risk_Level'] = [
+                    'High Risk' if p > RISK_THRESHOLD else 'Low Risk'
+                    for p in probs
+                ]
 
                 st.subheader("📊 Prediction Results Overview")
                 st.dataframe(df_result.style.applymap(
@@ -1776,7 +1804,7 @@ with tab2:
                     fig_batch = plt.figure(figsize=(6.5, 3.6), dpi=120)
                     shap.plots.waterfall(exp, max_display=8, show=False)
                     plt.tight_layout()
-                    st.pyplot(fig_batch, bbox_inches='tight', use_container_width=False)
+                    st.pyplot(fig_batch, bbox_inches='tight', width="content")
                     plt.close(fig_batch)
 
                     # 2. Force Plot
