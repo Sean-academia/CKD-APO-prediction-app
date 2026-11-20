@@ -64,9 +64,9 @@ http://127.0.0.1:8501
 
 ## Local LLM Interpretation
 
-The prediction model and SHAP visualization can run without a local LLM.
+The public Streamlit Community Cloud app provides RF prediction and SHAP explanations without an LLM. The app automatically checks whether LM Studio is reachable on the same computer. If no local service is detected, the LLM section displays a local-deployment notice and all non-LLM functions remain available.
 
-To enable LLM-assisted individualized interpretation:
+To enable LLM-assisted individualized interpretation, run the complete Streamlit app locally on the hospital computer and then:
 
 1. Open LM Studio.
 2. Load `qwen2.5-7b-instruct`.

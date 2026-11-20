@@ -21,6 +21,8 @@ import html
 import io
 import json
 import hashlib
+import urllib.error
+import urllib.request
 from pathlib import Path
 from datetime import datetime
 
@@ -76,6 +78,32 @@ def st_matplotlib_high_res(fig):
     fig.savefig(buffer, format="png", dpi=650, bbox_inches=None, facecolor="white")
     buffer.seek(0)
     st.image(buffer, width="stretch")
+
+
+@st.cache_data(ttl=20, show_spinner=False)
+def check_local_llm_service(base_url, model_name):
+    """Return whether the LM Studio OpenAI-compatible endpoint is reachable."""
+    models_url = f"{base_url.rstrip('/')}/models"
+    request = urllib.request.Request(
+        models_url,
+        headers={"Authorization": "Bearer lm-studio"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=LLM_CONNECT_TIMEOUT_SECONDS) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        model_ids = [item.get("id", "") for item in payload.get("data", [])]
+        model_loaded = any(
+            model_name.lower() == model_id.lower()
+            or model_name.lower() in model_id.lower()
+            or model_id.lower() in model_name.lower()
+            for model_id in model_ids
+            if model_id
+        )
+        if model_ids and not model_loaded:
+            return False, f"LM Studio is reachable, but {model_name} is not loaded."
+        return True, "LM Studio is reachable."
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
+        return False, str(exc)
 
 
 # --- Smart SHAP Explainer Selection ---
@@ -201,6 +229,9 @@ LLM_TOP_P = 1
 LLM_MAX_TOKENS = 600
 LLM_SEED = 6666
 LLM_CACHE_DIR = Path(__file__).parent / "llm_interpretation_cache"
+LLM_BASE_URL = "http://127.0.0.1:1234/v1"
+LLM_MODEL_NAME = "qwen2.5-7b-instruct"
+LLM_CONNECT_TIMEOUT_SECONDS = 1.5
 
 FEATURE_INPUT_CONFIG = {
     "ppHTN": {"type": "binary"},
@@ -245,6 +276,13 @@ TEXT = {
         "waterfall": "Individual Waterfall Plot",
         "llm_explanation": "LLM-Assisted Individual Interpretation",
         "llm_disabled": "Local LLM explanation is disabled.",
+        "llm_available": "Local LLM service detected. LLM-assisted interpretation is available.",
+        "llm_local_only": (
+            "The RF prediction and SHAP explanations are fully available on this public website. "
+            "LLM-assisted interpretation is available only in the locally deployed version. "
+            "To use it, run this Streamlit app on the hospital computer and start LM Studio with "
+            "Qwen2.5-7B-Instruct at http://127.0.0.1:1234."
+        ),
         "help": "Help",
         "llm_settings": "Local LLM Settings",
         "disclaimer": (
@@ -283,6 +321,13 @@ TEXT = {
         "waterfall": "个体瀑布图",
         "llm_explanation": "大语言模型辅助个体化解释",
         "llm_disabled": "本地大语言模型解释已关闭。",
+        "llm_available": "已检测到本地大语言模型服务，可以生成LLM辅助解释。",
+        "llm_local_only": (
+            "当前公开网页可正常使用RF风险预测和SHAP解释。"
+            "LLM辅助解释仅在本地部署版本中可用。"
+            "如需使用，请在医院电脑上运行本Streamlit应用，并在LM Studio中加载"
+            "Qwen2.5-7B-Instruct，然后启动http://127.0.0.1:1234本地服务。"
+        ),
         "help": "帮助",
         "llm_settings": "本地大语言模型设置",
         "disclaimer": "本工具仅提供模型预测风险估计，不等同于临床诊断，不能替代医生判断或指南推荐的临床管理。",
@@ -1537,9 +1582,12 @@ if st.session_state.entered_prediction_tool:
             unsafe_allow_html=True,
         )
 
-enable_llm = True
-llm_base_url = "http://127.0.0.1:1234/v1"
-llm_model_name = "qwen2.5-7b-instruct"
+llm_base_url = LLM_BASE_URL
+llm_model_name = LLM_MODEL_NAME
+enable_llm, llm_service_status = check_local_llm_service(
+    llm_base_url,
+    llm_model_name,
+)
 
 if not st.session_state.entered_prediction_tool:
     hero_image_path = Path(__file__).parent / "assets" / "ckd_pregnancy_hero.png"
@@ -1596,6 +1644,10 @@ with st.expander(TEXT[language]["help"], expanded=False):
     st.markdown(TEXT[language]["disclaimer"])
     st.markdown(f"**Input features ({len(feature_names)}):** {', '.join(feature_names)}")
     st.markdown(f"**Final model:** {model_name} ({type(model).__name__})")
+    if enable_llm:
+        st.success(TEXT[language]["llm_available"])
+    else:
+        st.info(TEXT[language]["llm_local_only"])
 
 # --- 3. Create tabs ---
 tab1, tab2 = st.tabs([f"📝 {TEXT[language]['single_tab']}", f"📂 {TEXT[language]['batch_tab']}"])
@@ -1702,7 +1754,8 @@ with tab1:
                             )
                             st.caption(str(llm_error))
             else:
-                st.info(TEXT[language]["llm_disabled"])
+                st.subheader(TEXT[language]["llm_explanation"])
+                st.info(TEXT[language]["llm_local_only"])
 
         except Exception as e:
             st.error(f"Error during execution: {e}")
